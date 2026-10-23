@@ -1,0 +1,10 @@
+Flow Preview
+Copyright 2026 Saffron Health, Inc.
+
+Licensed under the Apache License, Version 2.0.
+
+Extracted from Halo: https://github.com/cashew-labs/halo/pull/606
+Source commit: 57c50d391712d58c131dbf0a51a0fafa4491d1fa
+Original path: .agents/skills/flow-preview/
+
+This distribution adds standalone repository metadata and installation guidance.
