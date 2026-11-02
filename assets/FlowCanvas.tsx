@@ -52,11 +52,23 @@ export type FlowNode = {
   action: string;
   /** Vertical ordering within its column; missing rows do not reserve space. */
   row: number;
-  note?: string;
+  /**
+   * The runtime state and how the user reached it. A list renders one fact per bullet; label
+   * each item with the side or variant it describes when the preview compares several.
+   */
+  note?: string | readonly FlowNoteItem[];
   /** Maximum unscaled preview size; defaults to the scenario dimensions. */
   maxWidth?: number;
   maxHeight?: number;
   render: (context: { mode: "thumbnail" | "preview" }) => ReactNode;
+};
+
+export type FlowNoteItem = {
+  /** A short tag such as “Before”, “After” or “Check”; omit it for a plain bullet. */
+  label?: string;
+  /** Colors the label; `danger` marks something that looks wrong. Defaults to `neutral`. */
+  tone?: "neutral" | "accent" | "warning" | "danger";
+  text: string;
 };
 
 export type FlowScenario = {
@@ -508,11 +520,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           />
         </div>
       </Flex>
-      {current.note && (
-        <Text size="sm" color="lowContrast">
-          {current.note}
-        </Text>
-      )}
+      {current.note && <FlowNote note={current.note} />}
     </Flex>
   );
   const previewPanelFor = (ui: ReactNode, key: string) => (
@@ -920,6 +928,32 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   );
 }
 
+function FlowNote({ note }: { note: string | readonly FlowNoteItem[] }) {
+  const list = useStyles(styles.noteList);
+  const item = useStyles(styles.noteItem);
+  const label = useStyles(styles.noteLabel);
+  if (typeof note === "string")
+    return (
+      <Text size="sm" color="lowContrast">
+        {note}
+      </Text>
+    );
+  return (
+    <ul className={list}>
+      {note.map((entry, index) => (
+        <li key={index} className={item}>
+          <span className={label} data-tone={entry.tone ?? "neutral"}>
+            {entry.label ?? "•"}
+          </span>
+          <Text size="sm" color="lowContrast">
+            {entry.text}
+          </Text>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function PreviewScene({ children }: { children: ReactNode }) {
   const present = useIsPresent();
   const scene = useStyles(styles.scene);
@@ -1283,6 +1317,32 @@ const styles = {
     alignContent: "start",
     gap: 16,
     minWidth: 0,
+  }),
+  // Labels share one column through subgrid, so every item's text starts at the same edge.
+  noteList: style({
+    display: "grid",
+    gridTemplateColumns: "max-content minmax(0, 1fr)",
+    columnGap: 12,
+    rowGap: 4,
+    margin: 0,
+    padding: 0,
+    listStyle: "none",
+  }),
+  noteItem: style({
+    display: "grid",
+    gridColumn: "1 / -1",
+    gridTemplateColumns: "subgrid",
+    alignItems: "baseline",
+  }),
+  noteLabel: style({
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: colors.gray[11],
+    '&[data-tone="accent"]': { color: colors.accent[11] },
+    '&[data-tone="warning"]': { color: colors.amber[11] },
+    '&[data-tone="danger"]': { color: colors.red[11] },
   }),
   scene: style({
     display: "grid",

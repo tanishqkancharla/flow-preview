@@ -449,6 +449,50 @@ export const scenario`,
   }
 });
 
+test("a note list labels each fact and aligns the text after its labels", async ({
+  page,
+}) => {
+  await page.route("**/scenario.tsx*", async (route) => {
+    const response = await route.fetch();
+    const original = await response.text();
+    const body = original.replace(
+      'title: "Editing preferences"',
+      `title: "Editing preferences", note: [
+        { label: "Before", text: "Saving needed a page reload." },
+        { label: "After", tone: "accent", text: "Saving confirms in place." },
+        { label: "Check", tone: "danger", text: "An empty digest name still saves." },
+        { text: "Unlabeled facts get a bullet." },
+      ]`,
+    );
+    expect(body).not.toBe(original);
+    await route.fulfill({ response, body });
+  });
+  await page.reload();
+  const items = page
+    .getByRole("complementary", { name: "Selected state preview" })
+    .getByRole("list")
+    .filter({ hasText: "Saving needed a page reload." })
+    .getByRole("listitem");
+  await expect(items).toHaveCount(4);
+  await expect(items.nth(0)).toHaveText(/^Before\s*Saving needed a page reload\.$/);
+  await expect(items.nth(3)).toHaveText(/^•\s*Unlabeled facts get a bullet\.$/);
+  const danger = items.nth(2).locator('[data-tone="danger"]');
+  await expect(danger).toHaveText("Check");
+  const neutral = items.nth(0).locator('[data-tone="neutral"]');
+  expect(
+    await danger.evaluate((element) => getComputedStyle(element).color),
+  ).not.toBe(
+    await neutral.evaluate((element) => getComputedStyle(element).color),
+  );
+  const starts = await Promise.all(
+    [0, 1, 2, 3].map(
+      async (index) =>
+        (await items.nth(index).locator("> :last-child").boundingBox())!.x,
+    ),
+  );
+  expect(new Set(starts).size).toBe(1);
+});
+
 test("generic canvas renders light, dark and narrow without duplicate IDs", async ({
   page,
 }, testInfo) => {
