@@ -379,6 +379,76 @@ for (const change of ["content", "style"] as const) {
   });
 }
 
+test("a persistent preview stays mounted while the reviewer moves between states", async ({
+  page,
+  preview,
+}) => {
+  const scenario = path.join(
+    preview.project,
+    "tmp",
+    preview.name,
+    "scenario.tsx",
+  );
+  const original = await fs.readFile(scenario, "utf8");
+  const persistent = original
+    .replace(
+      "export const scenario",
+      `let mounts = 0;
+function Persistent({ selected, revision }: { selected: string; revision: number }) {
+  const [mount] = useState(() => ++mounts);
+  return (
+    <Flex column gap={8} padding={8}>
+      <Text role="status">{\`mount \${mount} · \${selected} · revision \${revision}\`}</Text>
+      <TextField aria-label="Persistent draft" defaultValue="" />
+    </Flex>
+  );
+}
+
+export const scenario`,
+    )
+    .replace(
+      "  ],\n};",
+      "  ],\n  persistentPreview: (context) => <Persistent {...context} />,\n};",
+    );
+  expect(persistent).not.toBe(original);
+  await fs.writeFile(scenario, persistent);
+  try {
+    await page.reload();
+    const status = page.getByRole("status").filter({ hasText: "mount" });
+    await expect(status).toHaveText(/^mount 1 · editing · revision \d+$/);
+    const draft = page.getByRole("textbox", { name: "Persistent draft" });
+    await draft.fill("kept across states");
+
+    await page
+      .getByRole("button", { name: "Follow flow: Save preferences" })
+      .click();
+    await expect(status).toHaveText(/^mount 1 · saved · revision \d+$/);
+    await expect(draft).toHaveValue("kept across states");
+
+    const revision = Number(/revision (\d+)/.exec(await status.innerText())![1]);
+    await page.getByRole("button", { name: "Previous state" }).click();
+    await expect(status).toHaveText(
+      `mount 1 · editing · revision ${revision + 1}`,
+    );
+    await page
+      .getByRole("navigation", { name: "State path" })
+      .getByRole("button", { name: "Editing preferences", exact: true })
+      .click();
+    await expect(status).toHaveText(
+      `mount 1 · editing · revision ${revision + 2}`,
+    );
+    await expect(draft).toHaveValue("kept across states");
+
+    const title = await page
+      .getByRole("heading", { name: "Editing preferences", level: 2 })
+      .boundingBox();
+    const panel = await draft.boundingBox();
+    expect(panel!.y).toBeGreaterThan(title!.y + title!.height);
+  } finally {
+    await fs.writeFile(scenario, original);
+  }
+});
+
 test("generic canvas renders light, dark and narrow without duplicate IDs", async ({
   page,
 }, testInfo) => {

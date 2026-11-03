@@ -76,6 +76,16 @@ export type FlowScenario = {
     rowGap?: number;
   };
   reviewStorageKey?: string;
+  /**
+   * One interactive preview that stays mounted while the reviewer changes states, instead of
+   * remounting `render({ mode: "preview" })` per state. Use it to drive a single live UI from
+   * its current state to the selected one. `revision` increases on every selection, including
+   * reselecting the current state, so the preview can tell a replay from a move.
+   */
+  persistentPreview?: (context: {
+    selected: string;
+    revision: number;
+  }) => ReactNode;
 };
 
 class ReviewError extends errore.createTaggedError({
@@ -414,6 +424,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const edge = useStyles(styles.edge);
   const preview = useStyles(styles.preview);
   const previewPanel = useStyles(styles.previewPanel);
+  const persistentPreviewLayout = useStyles(styles.persistentPreviewLayout);
   const navigationButton = useStyles(styles.navigationButton);
   const title = useStyles(text({ size: "lg", fontWeight: 600 }));
   const current = nodes.get(selected)!;
@@ -481,6 +492,80 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     </ul>
   );
 
+  const previewHeader = (
+    <Flex column gap={4}>
+      <Flex row justifyContent="between" alignItems="center" gap={4}>
+        <h2 className={title} style={{ margin: 0 }}>
+          {current.title}
+        </h2>
+        <div className={reviewCheckbox}>
+          <Checkbox
+            label="Reviewed"
+            checked={reviewed.includes(selected)}
+            setChecked={(checked: boolean) =>
+              markReviewed(selected, checked)
+            }
+          />
+        </div>
+      </Flex>
+      {current.note && (
+        <Text size="sm" color="lowContrast">
+          {current.note}
+        </Text>
+      )}
+    </Flex>
+  );
+  const previewPanelFor = (ui: ReactNode, key: string) => (
+    <div
+      key={key}
+      className={previewPanel}
+      style={{
+        padding: previewInset,
+        maxHeight: `calc(${current.maxHeight ?? (nodeHeight * (current.maxWidth ?? previewWidth)) / nodeWidth}px + ${previewInset} * 2 + 2px)`,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: current.maxWidth ?? previewWidth,
+          flexShrink: 0,
+        }}
+      >
+        {ui}
+      </div>
+    </div>
+  );
+  const previewNavigation = (
+    <Flex row gap={4} alignItems="start" style={{ flexWrap: "wrap" }}>
+      {current.parent && (
+        <Button
+          className={navigationButton}
+          onPress={() => select(current.parent!)}
+        >
+          <ArrowLeft />
+          Previous state
+        </Button>
+      )}
+      <Flex
+        row
+        gap={4}
+        justifyContent="end"
+        style={{ flex: 1, minWidth: 0, flexWrap: "wrap" }}
+      >
+        {next.map((step) => (
+          <Button
+            key={step.id}
+            aria-label={`Follow flow: ${step.action}`}
+            className={navigationButton}
+            onPress={() => select(step.id)}
+          >
+            {step.action}
+            <ArrowRight />
+          </Button>
+        ))}
+      </Flex>
+    </Flex>
+  );
   return (
     <main className={page}>
       <header className={header}>
@@ -788,86 +873,47 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
               ))}
             </ol>
           </nav>
-          <Crossfade
-            contentKey={selected}
-            direction="up"
-            style={{
-              minHeight: 0,
-              gridTemplateRows: "minmax(0, 1fr)",
-              overflow: "visible",
-            }}
-          >
-            <PreviewScene>
-              <Flex column gap={4}>
-                <Flex row justifyContent="between" alignItems="center" gap={4}>
-                  <h2 className={title} style={{ margin: 0 }}>
-                    {current.title}
-                  </h2>
-                  <div className={reviewCheckbox}>
-                    <Checkbox
-                      label="Reviewed"
-                      checked={reviewed.includes(selected)}
-                      setChecked={(checked: boolean) =>
-                        markReviewed(selected, checked)
-                      }
-                    />
-                  </div>
-                </Flex>
-                {current.note && (
-                  <Text size="sm" color="lowContrast">
-                    {current.note}
-                  </Text>
-                )}
-              </Flex>
-              <div
-                key={`${selected}-${revision}`}
-                className={previewPanel}
-                style={{
-                  padding: previewInset,
-                  maxHeight: `calc(${current.maxHeight ?? (nodeHeight * (current.maxWidth ?? previewWidth)) / nodeWidth}px + ${previewInset} * 2 + 2px)`,
-                }}
+          {scenario.persistentPreview ? (
+            <div className={persistentPreviewLayout}>
+              <Crossfade
+                contentKey={selected}
+                direction="up"
+                style={{ overflow: "visible" }}
               >
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: current.maxWidth ?? previewWidth,
-                    flexShrink: 0,
-                  }}
-                >
-                  {current.render({ mode: "preview" })}
-                </div>
-              </div>
-              <Flex row gap={4} alignItems="start" style={{ flexWrap: "wrap" }}>
-                {current.parent && (
-                  <Button
-                    className={navigationButton}
-                    onPress={() => select(current.parent!)}
-                  >
-                    <ArrowLeft />
-                    Previous state
-                  </Button>
+                <PreviewScene>{previewHeader}</PreviewScene>
+              </Crossfade>
+              {previewPanelFor(
+                scenario.persistentPreview({ selected, revision }),
+                "persistent",
+              )}
+              <Crossfade
+                contentKey={selected}
+                direction="up"
+                style={{ overflow: "visible" }}
+              >
+                <PreviewScene>{previewNavigation}</PreviewScene>
+              </Crossfade>
+            </div>
+          ) : (
+            <Crossfade
+              contentKey={selected}
+              direction="up"
+              style={{
+                minHeight: 0,
+                gridTemplateRows: "minmax(0, 1fr)",
+                overflow: "visible",
+              }}
+            >
+              <PreviewScene>
+                {previewHeader}
+                {previewPanelFor(
+                  current.render({ mode: "preview" }),
+                  `${selected}-${revision}`,
                 )}
-                <Flex
-                  row
-                  gap={4}
-                  justifyContent="end"
-                  style={{ flex: 1, minWidth: 0, flexWrap: "wrap" }}
-                >
-                  {next.map((step) => (
-                    <Button
-                      key={step.id}
-                      aria-label={`Follow flow: ${step.action}`}
-                      className={navigationButton}
-                      onPress={() => select(step.id)}
-                    >
-                      {step.action}
-                      <ArrowRight />
-                    </Button>
-                  ))}
-                </Flex>
-              </Flex>
-            </PreviewScene>
-          </Crossfade>
+                {previewNavigation}
+              </PreviewScene>
+            </Crossfade>
+          )}
         </aside>
       </div>
     </main>
@@ -1226,6 +1272,17 @@ const styles = {
     // Maui's focus ring uses relative positioning; handles must stay outside the grid flow.
     "&:focus-visible": { position: "absolute", zIndex: 25 },
     "@media (max-width: 900px)": { display: "none" },
+  }),
+  // Auto rows so the crossfading header and navigation keep their content height around the
+  // mounted panel; the inline-size container keeps the panel's `cqw` inset relative to the
+  // sidebar, as it is inside a scene.
+  persistentPreviewLayout: style({
+    display: "grid",
+    containerType: "inline-size",
+    gridTemplateRows: "auto auto auto",
+    alignContent: "start",
+    gap: 16,
+    minWidth: 0,
   }),
   scene: style({
     display: "grid",
