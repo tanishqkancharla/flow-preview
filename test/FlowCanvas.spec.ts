@@ -13,15 +13,12 @@ test.beforeEach(async ({ page, preview }) => {
 test("generator refuses existing previews and unsafe names without overwriting", async ({
   preview,
 }) => {
-  const generator = url.fileURLToPath(
-    new URL("../scripts/generate.mjs", import.meta.url),
-  );
+  const generator = url.fileURLToPath(new URL("../scripts/generate.mjs", import.meta.url));
   for (const args of [[preview.name], ["../escape"], ["valid-name", "80"]]) {
-    const generated = childProcess.spawnSync(
-      process.execPath,
-      [generator, ...args],
-      { cwd: preview.project, encoding: "utf8" },
-    );
+    const generated = childProcess.spawnSync(process.execPath, [generator, ...args], {
+      cwd: preview.project,
+      encoding: "utf8",
+    });
     expect(generated.status).toBe(1);
     expect(generated.stderr).not.toBe("");
   }
@@ -32,12 +29,8 @@ test("portal serves opted-in source but denies runtime data and credentials", as
   request,
   preview,
 }) => {
-  await expect(
-    page.getByRole("complementary").getByRole("textbox"),
-  ).toHaveValue("Morning digest");
-  const source = await request.get(
-    `${preview.origin}/@fs/${preview.project}/src/settings.ts`,
-  );
+  await expect(page.getByRole("complementary").getByRole("textbox")).toHaveValue("Morning digest");
+  const source = await request.get(`${preview.origin}/@fs/${preview.project}/src/settings.ts`);
   expect(source.status()).toBe(200);
   expect(await source.text()).toContain("Morning digest");
   const directory = path.join(preview.project, "tmp", preview.name);
@@ -60,15 +53,10 @@ test("portal serves opted-in source but denies runtime data and credentials", as
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "private-preview-sentinel");
     for (const query of ["?import", "", "?raw", "?raw&import", "?url&import"]) {
-      const response = await request.get(
-        `${preview.origin}/@fs/${file}${query}`,
-      );
-      expect(await response.text(), file + query).not.toContain(
-        "private-preview-sentinel",
-      );
+      const response = await request.get(`${preview.origin}/@fs/${file}${query}`);
+      expect(await response.text(), file + query).not.toContain("private-preview-sentinel");
       // Vite can return a URL-only asset module for ?import, never file contents.
-      if (query !== "?import")
-        expect(response.status(), file + query).toBe(403);
+      if (query !== "?import") expect(response.status(), file + query).toBe(403);
     }
   }
   const rootRelative = await request.get(`${preview.origin}/.halo/server.json`);
@@ -96,32 +84,23 @@ test("generated unrelated flow supports selection, local editing, breadcrumbs an
   ).toHaveCount(2);
   const name = preview.getByRole("textbox", { name: "Digest name" });
   await name.fill("My changes");
-  await page
-    .getByRole("button", { name: "Preview Preferences saved", exact: true })
-    .hover();
+  await page.getByRole("button", { name: "Preview Preferences saved", exact: true }).hover();
   await expect(name).toHaveValue("My changes");
   await expect(
     preview.getByRole("heading", { name: "Editing preferences", exact: true }),
   ).toBeVisible();
-  await preview
-    .getByRole("button", { name: "Save preferences", exact: true })
-    .click();
+  await preview.getByRole("button", { name: "Save preferences", exact: true }).click();
   await expect(preview.getByRole("status")).toHaveText("Preferences saved");
-  await breadcrumbs
-    .getByRole("button", { name: "Editing preferences", exact: true })
-    .click();
+  await breadcrumbs.getByRole("button", { name: "Editing preferences", exact: true }).click();
   await expect(name).toHaveValue("Morning digest");
   await expect(name).toBeInViewport();
   await expect(preview.getByRole("status")).toHaveCount(0);
-  await preview
-    .getByRole("button", { name: "Follow flow: Save preferences" })
-    .click();
-  await expect(
-    preview.getByRole("heading", { name: "Preferences saved" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Preview Preferences saved" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await preview.getByRole("button", { name: "Follow flow: Save preferences" }).click();
+  await expect(preview.getByRole("heading", { name: "Preferences saved" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Preview Preferences saved" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(preview.getByRole("textbox")).toHaveCount(1);
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
@@ -130,9 +109,7 @@ test("generated unrelated flow supports selection, local editing, breadcrumbs an
   await expect(
     breadcrumbs.getByRole("button", { name: "Preferences saved", exact: true }),
   ).toHaveAttribute("aria-current", "step");
-  await breadcrumbs
-    .getByRole("button", { name: "Editing preferences", exact: true })
-    .click();
+  await breadcrumbs.getByRole("button", { name: "Editing preferences", exact: true }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
     "Preferences saved",
@@ -147,9 +124,7 @@ test("generated unrelated flow supports selection, local editing, breadcrumbs an
     breadcrumbs.getByRole("button", { name: "Preferences saved", exact: true }),
   ).not.toHaveAttribute("aria-current", "step");
   await expect(name).toHaveValue("Morning digest");
-  await breadcrumbs
-    .getByRole("button", { name: "Preferences saved", exact: true })
-    .click();
+  await breadcrumbs.getByRole("button", { name: "Preferences saved", exact: true }).click();
   await expect(preview.getByRole("status")).toHaveText("Preferences saved");
   await preview.getByRole("button", { name: "Previous state" }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
@@ -160,9 +135,10 @@ test("generated unrelated flow supports selection, local editing, breadcrumbs an
   await expect(page.getByText("95%", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Toggle flow sidebar" }).click();
   await expect(outline).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Toggle flow sidebar" }),
-  ).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Toggle flow sidebar" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   await page.getByRole("button", { name: "Toggle flow sidebar" }).click();
   await expect(outline).toBeVisible();
   expect(errors).toEqual([]);
@@ -186,19 +162,13 @@ test("breadcrumbs retain a journey across navigation and replace it on a differe
   const preview = page.getByRole("complementary");
   const breadcrumbs = preview.getByRole("navigation", { name: "State path" });
   const outline = page.getByRole("navigation", { name: "Flow outline" });
-  await outline
-    .getByRole("button", { name: "Preferences saved", exact: true })
-    .click();
-  await breadcrumbs
-    .getByRole("button", { name: "Editing preferences", exact: true })
-    .click();
+  await outline.getByRole("button", { name: "Preferences saved", exact: true }).click();
+  await breadcrumbs.getByRole("button", { name: "Editing preferences", exact: true }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
     "Preferences saved",
   ]);
-  await preview
-    .getByRole("button", { name: "Follow flow: Discard changes" })
-    .click();
+  await preview.getByRole("button", { name: "Follow flow: Discard changes" }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
     "Changes discarded",
@@ -206,16 +176,12 @@ test("breadcrumbs retain a journey across navigation and replace it on a differe
   await expect(
     preview.getByRole("heading", { name: "Changes discarded", exact: true }),
   ).toBeVisible();
-  await outline
-    .getByRole("button", { name: "Editing preferences", exact: true })
-    .click();
+  await outline.getByRole("button", { name: "Editing preferences", exact: true }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
     "Changes discarded",
   ]);
-  await preview
-    .getByRole("button", { name: "Follow flow: Save preferences" })
-    .click();
+  await preview.getByRole("button", { name: "Follow flow: Save preferences" }).click();
   await expect(breadcrumbs.getByRole("button")).toHaveText([
     "Editing preferences",
     "Preferences saved",
@@ -274,9 +240,7 @@ test("sparse row hints keep adjacent columns visible without invalidating review
   await page.route("**/scenario.tsx*", async (route) => {
     const response = await route.fetch();
     const original = await response.text();
-    const body = original
-      .replace("row: 0", "row: 40")
-      .replace("row: 0", "row: 400");
+    const body = original.replace("row: 0", "row: 40").replace("row: 0", "row: 400");
     expect(body).not.toBe(original);
     await route.fulfill({ response, body });
   });
@@ -323,9 +287,7 @@ test("reviews synchronize in all three surfaces and survive drafts, breadcrumbs,
   await expect(
     page.getByRole("img", { name: "Reviewed: Preferences saved", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Preview Editing preferences", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Preview Editing preferences", exact: true }).click();
   await expect(review).toBeChecked();
   await preview.getByRole("textbox").fill("Unsaved draft");
   await preview
@@ -348,9 +310,7 @@ test("reviews synchronize in all three surfaces and survive drafts, breadcrumbs,
 });
 
 for (const change of ["content", "style"] as const) {
-  test(`only the changed state's ${change} invalidates its review`, async ({
-    page,
-  }) => {
+  test(`only the changed state's ${change} invalidates its review`, async ({ page }) => {
     const review = (title: string) =>
       page
         .getByRole("group", { name: `Review in tree: ${title}`, exact: true })
@@ -383,12 +343,7 @@ test("a persistent preview stays mounted while the reviewer moves between states
   page,
   preview,
 }) => {
-  const scenario = path.join(
-    preview.project,
-    "tmp",
-    preview.name,
-    "scenario.tsx",
-  );
+  const scenario = path.join(preview.project, "tmp", preview.name, "scenario.tsx");
   const original = await fs.readFile(scenario, "utf8");
   const persistent = original
     .replace(
@@ -419,24 +374,18 @@ export const scenario`,
     const draft = page.getByRole("textbox", { name: "Persistent draft" });
     await draft.fill("kept across states");
 
-    await page
-      .getByRole("button", { name: "Follow flow: Save preferences" })
-      .click();
+    await page.getByRole("button", { name: "Follow flow: Save preferences" }).click();
     await expect(status).toHaveText(/^mount 1 · saved · revision \d+$/);
     await expect(draft).toHaveValue("kept across states");
 
     const revision = Number(/revision (\d+)/.exec(await status.innerText())![1]);
     await page.getByRole("button", { name: "Previous state" }).click();
-    await expect(status).toHaveText(
-      `mount 1 · editing · revision ${revision + 1}`,
-    );
+    await expect(status).toHaveText(`mount 1 · editing · revision ${revision + 1}`);
     await page
       .getByRole("navigation", { name: "State path" })
       .getByRole("button", { name: "Editing preferences", exact: true })
       .click();
-    await expect(status).toHaveText(
-      `mount 1 · editing · revision ${revision + 2}`,
-    );
+    await expect(status).toHaveText(`mount 1 · editing · revision ${revision + 2}`);
     await expect(draft).toHaveValue("kept across states");
 
     const title = await page
@@ -473,16 +422,10 @@ test("generic canvas renders light, dark and narrow without duplicate IDs", asyn
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await page.getByRole("button", { name: "Toggle flow sidebar" }).click();
-  await expect(
-    page.getByRole("navigation", { name: "Flow outline" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("complementary").getByRole("textbox"),
-  ).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Flow outline" })).toHaveCount(0);
+  await expect(page.getByRole("complementary").getByRole("textbox")).toBeVisible();
   const preview = page.getByRole("complementary");
-  await preview
-    .getByRole("button", { name: "Save preferences", exact: true })
-    .click();
+  await preview.getByRole("button", { name: "Save preferences", exact: true }).click();
   await expect(preview.getByRole("status")).toHaveText("Preferences saved");
   await expect(preview.getByRole("textbox")).toBeInViewport({ ratio: 1 });
   await expect(

@@ -82,10 +82,7 @@ export type FlowScenario = {
    * its current state to the selected one. `revision` increases on every selection, including
    * reselecting the current state, so the preview can tell a replay from a move.
    */
-  persistentPreview?: (context: {
-    selected: string;
-    revision: number;
-  }) => ReactNode;
+  persistentPreview?: (context: { selected: string; revision: number }) => ReactNode;
 };
 
 class ReviewError extends errore.createTaggedError({
@@ -144,16 +141,11 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const layoutRef = useRef<HTMLDivElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(window.innerWidth);
   useLayoutEffect(() => {
-    const observer = new ResizeObserver(([entry]) =>
-      setLayoutWidth(entry!.contentRect.width),
-    );
+    const observer = new ResizeObserver(([entry]) => setLayoutWidth(entry!.contentRect.width));
     observer.observe(layoutRef.current!);
     return () => observer.disconnect();
   }, []);
-  const treeMaximum = Math.max(
-    180,
-    Math.min(480, layoutWidth - (layoutWidth <= 900 ? 40 : 560)),
-  );
+  const treeMaximum = Math.max(180, Math.min(480, layoutWidth - (layoutWidth <= 900 ? 40 : 560)));
   const shownTreeWidth = Math.min(treeMaximum, Math.max(180, treeWidth));
   const panelMaximum = Math.max(
     320,
@@ -171,15 +163,10 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const columnGap = scenario.dimensions?.columnGap ?? 56;
   const rowGap = scenario.dimensions?.rowGap ?? 64;
   const label = scenario.navigationLabel ?? "Flow";
-  const storageKey =
-    scenario.reviewStorageKey ?? `flow-reviewed-v1:${scenario.id}`;
+  const storageKey = scenario.reviewStorageKey ?? `flow-reviewed-v1:${scenario.id}`;
   const outlineId = `${scenario.id}-flow-outline`;
-  const [thumbnailHeights, setThumbnailHeights] = useState<
-    Record<string, number>
-  >({});
-  const [thumbnailHeaderHeights, setThumbnailHeaderHeights] = useState<
-    Record<string, number>
-  >({});
+  const [thumbnailHeights, setThumbnailHeights] = useState<Record<string, number>>({});
+  const [thumbnailHeaderHeights, setThumbnailHeaderHeights] = useState<Record<string, number>>({});
   const nodes = useMemo(() => {
     const positioned = new Map<
       string,
@@ -188,9 +175,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     for (const step of steps) {
       positioned.set(step.id, {
         ...step,
-        x: step.parent
-          ? positioned.get(step.parent)!.x + nodeWidth + columnGap
-          : 24,
+        x: step.parent ? positioned.get(step.parent)!.x + nodeWidth + columnGap : 24,
         y: 0,
         height: thumbnailHeights[step.id] ?? nodeHeight,
         headerHeight: thumbnailHeaderHeights[step.id] ?? thumbnailHeaderHeight,
@@ -200,39 +185,19 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     const nextTop = new Map<number, number>();
     // oxlint-disable-next-line unicorn/no-array-sort -- Sort a fresh array without requiring ES2023 browser APIs.
     for (const node of [...positioned.values()].sort((a, b) => a.row - b.row)) {
-      node.y =
-        (nextTop.get(node.x) ?? 16) +
-        thumbnailPadding +
-        node.headerHeight +
-        thumbnailGap;
+      node.y = (nextTop.get(node.x) ?? 16) + thumbnailPadding + node.headerHeight + thumbnailGap;
       nextTop.set(
         node.x,
         node.y +
           node.height +
           thumbnailPadding +
-          Math.max(
-            8,
-            rowGap -
-              thumbnailPadding * 2 -
-              thumbnailHeaderHeight -
-              thumbnailGap,
-          ),
+          Math.max(8, rowGap - thumbnailPadding * 2 - thumbnailHeaderHeight - thumbnailGap),
       );
     }
     return positioned;
-  }, [
-    steps,
-    nodeWidth,
-    nodeHeight,
-    columnGap,
-    rowGap,
-    thumbnailHeights,
-    thumbnailHeaderHeights,
-  ]);
-  const graphWidth =
-    Math.max(...[...nodes.values()].map((node) => node.x)) + nodeWidth + 24;
-  const graphHeight =
-    Math.max(...[...nodes.values()].map((node) => node.y + node.height)) + 24;
+  }, [steps, nodeWidth, nodeHeight, columnGap, rowGap, thumbnailHeights, thumbnailHeaderHeights]);
+  const graphWidth = Math.max(...[...nodes.values()].map((node) => node.x)) + nodeWidth + 24;
+  const graphHeight = Math.max(...[...nodes.values()].map((node) => node.y + node.height)) + 24;
   const [selected, setSelected] = useState(scenario.initialState);
   const [journeyEnd, setJourneyEnd] = useState(scenario.initialState);
   const breadcrumbs: string[] = [];
@@ -267,10 +232,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
       );
       setThumbnailHeaderHeights(
         Object.fromEntries(
-          [...thumbnailHeaderRefs.current].map(([id, element]) => [
-            id,
-            element.offsetHeight,
-          ]),
+          [...thumbnailHeaderRefs.current].map(([id, element]) => [id, element.offsetHeight]),
         ),
       );
     };
@@ -302,9 +264,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     });
     if (saved instanceof Error) console.warn(saved);
     setReviewed((previous) =>
-      checked
-        ? [...new Set([...previous, id])]
-        : previous.filter((item) => item !== id),
+      checked ? [...new Set([...previous, id])] : previous.filter((item) => item !== id),
     );
   };
   useEffect(() => {
@@ -315,9 +275,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
       void Promise.all(
         steps.map(async (step) => {
           // SAFETY: cloneNode preserves the HTMLDivElement registered by the thumbnail ref.
-          const clone = thumbnailRefs.current
-            .get(step.id)!
-            .cloneNode(true) as HTMLElement;
+          const clone = thumbnailRefs.current.get(step.id)!.cloneNode(true) as HTMLElement;
           for (const element of [clone, ...clone.querySelectorAll("*")]) {
             for (const attribute of element.getAttributeNames()) {
               if (
@@ -332,23 +290,15 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
             if (element instanceof HTMLElement) {
               element.style.removeProperty("opacity");
               element.style.removeProperty("transform");
-              if (
-                element.tagName === "DIV" &&
-                element.closest("[aria-busy='true']")
-              )
+              if (element.tagName === "DIV" && element.closest("[aria-busy='true']"))
                 element.style.removeProperty("height");
-              if (element.getAttribute("style") === "")
-                element.removeAttribute("style");
+              if (element.getAttribute("style") === "") element.removeAttribute("style");
             }
           }
-          const bytes = new TextEncoder().encode(
-            `${step.action}:${clone.innerHTML}`,
-          );
+          const bytes = new TextEncoder().encode(`${step.action}:${clone.innerHTML}`);
           const digest = await crypto.subtle
             .digest("SHA-256", bytes)
-            .catch(
-              (cause) => new ReviewError({ operation: "fingerprint", cause }),
-            );
+            .catch((cause) => new ReviewError({ operation: "fingerprint", cause }));
           if (digest instanceof Error) return digest;
           return [
             step.id,
@@ -360,23 +310,20 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
       )
         .then((entries) => {
           if (cancelled) return;
-          const validEntries = entries.filter(
-            (entry): entry is readonly [string, string] => {
-              if (entry instanceof Error) {
-                console.warn(entry);
-                return false;
-              }
-              return true;
-            },
-          );
+          const validEntries = entries.filter((entry): entry is readonly [string, string] => {
+            if (entry instanceof Error) {
+              console.warn(entry);
+              return false;
+            }
+            return true;
+          });
           const nextSignatures = Object.fromEntries(validEntries);
           setSignatures(nextSignatures);
           const stored = errore.try({
             try: () =>
               validEntries
                 .filter(
-                  ([id, signature]) =>
-                    localStorage.getItem(`${storageKey}:${id}`) === signature,
+                  ([id, signature]) => localStorage.getItem(`${storageKey}:${id}`) === signature,
                 )
                 .map(([id]) => id),
             catch: (cause) => new ReviewError({ operation: "load", cause }),
@@ -387,9 +334,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           }
           setReviewed(stored);
         })
-        .catch((cause) =>
-          console.warn(new ReviewError({ operation: "fingerprint", cause })),
-        );
+        .catch((cause) => console.warn(new ReviewError({ operation: "fingerprint", cause })));
     });
     return () => {
       cancelled = true;
@@ -402,10 +347,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const page = useStyles(styles.page);
   const header = useStyles(styles.header);
   const content = useStyles(styles.content, !sidebarOpen && styles.collapsed);
-  const sidebarToggle = useStyles(
-    styles.sidebarToggle,
-    !sidebarOpen && styles.toggleCollapsed,
-  );
+  const sidebarToggle = useStyles(styles.sidebarToggle, !sidebarOpen && styles.toggleCollapsed);
   const treeSlot = useStyles(styles.treeSlot);
   const tree = useStyles(styles.tree, !sidebarOpen && styles.treeClosed);
   const treeList = useStyles(styles.treeList);
@@ -436,14 +378,8 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     const viewport = scroller.current!;
     viewport.scrollTo({
       behavior: !centered.current || reduceMotion ? "instant" : "smooth",
-      left: Math.max(
-        0,
-        (current.x + nodeWidth / 2) * zoom - viewport.clientWidth / 2,
-      ),
-      top: Math.max(
-        0,
-        (current.y + current.height / 2) * zoom - viewport.clientHeight / 2,
-      ),
+      left: Math.max(0, (current.x + nodeWidth / 2) * zoom - viewport.clientWidth / 2),
+      top: Math.max(0, (current.y + current.height / 2) * zoom - viewport.clientHeight / 2),
     });
     centered.current = true;
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Reselecting/resetting a state recenters its thumbnail too.
@@ -478,14 +414,11 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                   <Checkbox
                     label="Reviewed"
                     checked={reviewed.includes(step.id)}
-                    setChecked={(checked: boolean) =>
-                      markReviewed(step.id, checked)
-                    }
+                    setChecked={(checked: boolean) => markReviewed(step.id, checked)}
                   />
                 </div>
               </div>
-              {steps.some((child) => child.parent === step.id) &&
-                renderTree(step.id)}
+              {steps.some((child) => child.parent === step.id) && renderTree(step.id)}
             </li>
           );
         })}
@@ -502,9 +435,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           <Checkbox
             label="Reviewed"
             checked={reviewed.includes(selected)}
-            setChecked={(checked: boolean) =>
-              markReviewed(selected, checked)
-            }
+            setChecked={(checked: boolean) => markReviewed(selected, checked)}
           />
         </div>
       </Flex>
@@ -538,20 +469,12 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const previewNavigation = (
     <Flex row gap={4} alignItems="start" style={{ flexWrap: "wrap" }}>
       {current.parent && (
-        <Button
-          className={navigationButton}
-          onPress={() => select(current.parent!)}
-        >
+        <Button className={navigationButton} onPress={() => select(current.parent!)}>
           <ArrowLeft />
           Previous state
         </Button>
       )}
-      <Flex
-        row
-        gap={4}
-        justifyContent="end"
-        style={{ flex: 1, minWidth: 0, flexWrap: "wrap" }}
-      >
+      <Flex row gap={4} justifyContent="end" style={{ flex: 1, minWidth: 0, flexWrap: "wrap" }}>
         {next.map((step) => (
           <Button
             key={step.id}
@@ -578,9 +501,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           )}
         </Flex>
         <Button
-          onPress={() =>
-            setPreference(resolvedTheme === "dark" ? "light" : "dark")
-          }
+          onPress={() => setPreference(resolvedTheme === "dark" ? "light" : "dark")}
           aria-label="Toggle theme"
         >
           {resolvedTheme === "dark" ? <Sun /> : <Moon />}
@@ -669,15 +590,8 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
               </Button>
             </Flex>
           </Flex>
-          <div
-            className={map}
-            ref={scroller}
-            tabIndex={0}
-            aria-label="Scrollable flow map"
-          >
-            <div
-              style={{ width: graphWidth * zoom, height: graphHeight * zoom }}
-            >
+          <div className={map} ref={scroller} tabIndex={0} aria-label="Scrollable flow map">
+            <div style={{ width: graphWidth * zoom, height: graphHeight * zoom }}>
               <nav
                 className={graph}
                 aria-label={`${label} states`}
@@ -712,11 +626,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                           className={edge}
                           d={`M ${startX} ${startY} H ${elbow} V ${endY} H ${to.x - 8} l -5 -4 m 5 4 l -5 4`}
                           fill="none"
-                          stroke={
-                            path.has(step.id)
-                              ? colors.accent[8]
-                              : colors.gray[8]
-                          }
+                          stroke={path.has(step.id) ? colors.accent[8] : colors.gray[8]}
                           strokeWidth={path.has(step.id) ? 2 : 1.5}
                         />
                       );
@@ -731,33 +641,20 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                       data-selected={selected === step.id}
                       style={{
                         left: node.x - thumbnailPadding,
-                        top:
-                          node.y -
-                          thumbnailPadding -
-                          node.headerHeight -
-                          thumbnailGap,
+                        top: node.y - thumbnailPadding - node.headerHeight - thumbnailGap,
                         width: nodeWidth + thumbnailPadding * 2,
                         height:
-                          node.height +
-                          thumbnailPadding * 2 +
-                          node.headerHeight +
-                          thumbnailGap,
+                          node.height + thumbnailPadding * 2 + node.headerHeight + thumbnailGap,
                       }}
                     >
                       <div
                         className={nodeHeader}
                         ref={(element) => {
-                          if (element)
-                            thumbnailHeaderRefs.current.set(step.id, element);
+                          if (element) thumbnailHeaderRefs.current.set(step.id, element);
                           else thumbnailHeaderRefs.current.delete(step.id);
                         }}
                       >
-                        <Text
-                          data-flow-title
-                          size="sm"
-                          fontWeight={500}
-                          style={{ flex: 1 }}
-                        >
+                        <Text data-flow-title size="sm" fontWeight={500} style={{ flex: 1 }}>
                           {step.title}
                         </Text>
                         <div
@@ -768,9 +665,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                           <Checkbox
                             label="Reviewed"
                             checked={reviewed.includes(step.id)}
-                            setChecked={(checked: boolean) =>
-                              markReviewed(step.id, checked)
-                            }
+                            setChecked={(checked: boolean) => markReviewed(step.id, checked)}
                           />
                         </div>
                       </div>
@@ -783,8 +678,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                         >
                           <div
                             ref={(element) => {
-                              if (element)
-                                thumbnailRefs.current.set(step.id, element);
+                              if (element) thumbnailRefs.current.set(step.id, element);
                               else thumbnailRefs.current.delete(step.id);
                             }}
                             style={{
@@ -822,11 +716,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
             </div>
           </div>
         </section>
-        <aside
-          className={preview}
-          ref={previewScroller}
-          aria-label="Selected state preview"
-        >
+        <aside className={preview} ref={previewScroller} aria-label="Selected state preview">
           <nav aria-label="State path">
             <ol
               style={{
@@ -849,11 +739,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                   }}
                 >
                   {index > 0 && (
-                    <ChevronRight
-                      size="xs"
-                      aria-hidden="true"
-                      style={{ flexShrink: 0 }}
-                    />
+                    <ChevronRight size="xs" aria-hidden="true" style={{ flexShrink: 0 }} />
                   )}
                   <Button
                     variant="quiet"
@@ -875,22 +761,11 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           </nav>
           {scenario.persistentPreview ? (
             <div className={persistentPreviewLayout}>
-              <Crossfade
-                contentKey={selected}
-                direction="up"
-                style={{ overflow: "visible" }}
-              >
+              <Crossfade contentKey={selected} direction="up" style={{ overflow: "visible" }}>
                 <PreviewScene>{previewHeader}</PreviewScene>
               </Crossfade>
-              {previewPanelFor(
-                scenario.persistentPreview({ selected, revision }),
-                "persistent",
-              )}
-              <Crossfade
-                contentKey={selected}
-                direction="up"
-                style={{ overflow: "visible" }}
-              >
+              {previewPanelFor(scenario.persistentPreview({ selected, revision }), "persistent")}
+              <Crossfade contentKey={selected} direction="up" style={{ overflow: "visible" }}>
                 <PreviewScene>{previewNavigation}</PreviewScene>
               </Crossfade>
             </div>
@@ -906,10 +781,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
             >
               <PreviewScene>
                 {previewHeader}
-                {previewPanelFor(
-                  current.render({ mode: "preview" }),
-                  `${selected}-${revision}`,
-                )}
+                {previewPanelFor(current.render({ mode: "preview" }), `${selected}-${revision}`)}
                 {previewNavigation}
               </PreviewScene>
             </Crossfade>
@@ -950,8 +822,7 @@ function SidebarResizeHandle({
   const handle = useStyles(styles.resizeHandle);
   const drag = useRef<{ x: number; width: number } | undefined>(undefined);
   const direction = side === "left" ? 1 : -1;
-  const resize = (width: number) =>
-    setValue(Math.max(minimum, Math.min(maximum, width)));
+  const resize = (width: number) => setValue(Math.max(minimum, Math.min(maximum, width)));
   return (
     <div
       className={handle}
@@ -973,17 +844,14 @@ function SidebarResizeHandle({
       }}
       onPointerMove={(event) => {
         if (!drag.current) return;
-        resize(
-          drag.current.width + direction * (event.clientX - drag.current.x),
-        );
+        resize(drag.current.width + direction * (event.clientX - drag.current.x));
       }}
       onLostPointerCapture={() => {
         drag.current = undefined;
         onResizingChange(false);
       }}
       onKeyDown={(event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-          return;
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
         resize(
           event.key === "Home"
@@ -1024,8 +892,7 @@ const styles = {
   content: style(motion.standard("grid-template-columns"), {
     position: "relative",
     display: "grid",
-    gridTemplateColumns:
-      "var(--flow-tree-width) minmax(0, 1fr) var(--flow-preview-width)",
+    gridTemplateColumns: "var(--flow-tree-width) minmax(0, 1fr) var(--flow-preview-width)",
     minHeight: 0,
     flex: 1,
     "&[data-resizing='true']": {
@@ -1162,23 +1029,18 @@ const styles = {
     "&[data-reviewed='true']": { opacity: 0.35 },
     "@media (prefers-reduced-motion: reduce)": { transition: "none" },
   }),
-  reviewedMark: style(
-    radius.circle,
-    shadow.subtle,
-    text({ color: "onAccent" }),
-    {
-      position: "absolute",
-      top: "50%",
-      left: "50%",
-      transform: "translate(-50%, -50%)",
-      width: 40,
-      height: 40,
-      display: "grid",
-      placeItems: "center",
-      backgroundColor: colors.green[9],
-      pointerEvents: "none",
-    },
-  ),
+  reviewedMark: style(radius.circle, shadow.subtle, text({ color: "onAccent" }), {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 40,
+    height: 40,
+    display: "grid",
+    placeItems: "center",
+    backgroundColor: colors.green[9],
+    pointerEvents: "none",
+  }),
   hit: style(focusRing("&&:focus-visible"), {
     "&&": {
       position: "absolute",

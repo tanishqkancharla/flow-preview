@@ -15,12 +15,7 @@ const DEFAULT_DEDUPE = [
 // `dedupe` forces one copy of each package across the preview and the imported source. Narrow
 // it when the project pins a different major of one of these (its code would otherwise run
 // against the preview's copy).
-export function previewConfig({
-  directory,
-  port,
-  sourceRoots = [],
-  dedupe = DEFAULT_DEDUPE,
-}) {
+export function previewConfig({ directory, port, sourceRoots = [], dedupe = DEFAULT_DEDUPE }) {
   return defineConfig({
     root: directory,
     plugins: [react()],
@@ -31,10 +26,7 @@ export function previewConfig({
       strictPort: true,
       allowedHosts: true,
       fs: {
-        allow: [
-          directory,
-          ...sourceRoots.map((root) => path.resolve(directory, root)),
-        ],
+        allow: [directory, ...sourceRoots.map((root) => path.resolve(directory, root))],
         deny: [
           "**/.env",
           "**/.env.*",

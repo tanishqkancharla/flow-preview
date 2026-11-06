@@ -5,22 +5,15 @@ import url from "node:url";
 
 const skill = url.fileURLToPath(new URL("../", import.meta.url));
 const repo = process.cwd();
-const usage =
-  "Usage: node <flow-preview-skill>/scripts/generate.mjs <lowercase-name> [port]";
+const usage = "Usage: node <flow-preview-skill>/scripts/generate.mjs <lowercase-name> [port]";
 
 async function generate() {
   const [name, requestedPort = "4180", ...extra] = process.argv.slice(2);
   if (name === "--help") {
-    console.log(
-      `${usage}\nCreates tmp/<name> in the current directory. Default port: 4180.`,
-    );
+    console.log(`${usage}\nCreates tmp/<name> in the current directory. Default port: 4180.`);
     return;
   }
-  if (
-    !name ||
-    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name) ||
-    extra.length > 0
-  ) {
+  if (!name || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name) || extra.length > 0) {
     return new Error(usage);
   }
   const port = Number(requestedPort);
@@ -31,10 +24,7 @@ async function generate() {
     .mkdir(path.join(repo, "tmp"), { recursive: true })
     .catch(
       (cause) =>
-        new Error(
-          "Could not create tmp/. Check the current directory permissions.",
-          { cause },
-        ),
+        new Error("Could not create tmp/. Check the current directory permissions.", { cause }),
     );
   if (temporaryRoot instanceof Error) return temporaryRoot;
   const directory = path.join(repo, "tmp", name);
@@ -55,10 +45,7 @@ async function generate() {
   const metadata = await fs
     .readFile(path.join(skill, "package.json"), "utf8")
     .then(JSON.parse)
-    .catch(
-      (cause) =>
-        new Error("Could not read the skill's package.json.", { cause }),
-    );
+    .catch((cause) => new Error("Could not read the skill's package.json.", { cause }));
   if (metadata instanceof Error) return metadata;
   const files = {
     "package.json":
@@ -155,10 +142,9 @@ export const scenario: FlowScenario = {
       .writeFile(path.join(directory, filename), contents, { flag: "wx" })
       .catch(
         (cause) =>
-          new Error(
-            `Could not write tmp/${name}/${filename}. Check directory permissions.`,
-            { cause },
-          ),
+          new Error(`Could not write tmp/${name}/${filename}. Check directory permissions.`, {
+            cause,
+          }),
       );
     if (written instanceof Error) return written;
   }
