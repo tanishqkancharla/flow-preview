@@ -4,10 +4,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./test",
-  outputDir: path.join(
-    url.fileURLToPath(new URL("./", import.meta.url)),
-    "tmp/test-results",
-  ),
+  outputDir: path.join(url.fileURLToPath(new URL("./", import.meta.url)), "tmp/test-results"),
   workers: 1,
   use: {
     viewport: { width: 1460, height: 1000 },

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# No authentication, backing services, or environment repairs are needed.
+# Toolchains, npm dependencies, and Chromium persist in the orb snapshot.
