@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# Amp's base image provides Node and npm; honor the repository's minimum version.
+node -e 'if (Number(process.versions.node.split(".")[0]) < 24) throw new Error("Node.js 24 or later is required")'
+
+echo "Installing locked npm dependencies (reusing restored node_modules and npm cache)"
+time npm install --workspaces=false --include=dev --no-audit --no-fund
+
+echo "Checking Chromium system dependencies"
+if ! npx --no-install playwright install-deps --dry-run chromium; then
+  time npx --no-install playwright install-deps chromium
+fi
+
+echo "Installing Playwright Chromium (cached when already installed)"
+time npx --no-install playwright install chromium
