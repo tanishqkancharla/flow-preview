@@ -398,6 +398,245 @@ export const scenario`,
   }
 });
 
+test("opt-in comparison preserves each revision's states, routes, reviews and live previews", async ({
+  page,
+  preview,
+}) => {
+  const directory = path.join(preview.project, "tmp", preview.name);
+  const entry = path.join(directory, "main.tsx");
+  const scenario = path.join(directory, "scenario.tsx");
+  const originalEntry = await fs.readFile(entry, "utf8");
+  const originalScenario = await fs.readFile(scenario, "utf8");
+  const compared =
+    originalScenario +
+    `
+const [editing, originalSaved] = scenario.nodes;
+const saved = { ...originalSaved, render: () => <Flex column><Text role="status">Preferences saved</Text><TextField aria-label="Shared draft" defaultValue="" /></Flex> };
+const start = { id: "start", title: "Settings", action: "Open settings", row: 0, render: () => <Text>Account settings</Text> };
+const before: FlowScenario = {
+  ...scenario, id: "before", nodes: [start, { ...editing, parent: "start" }, saved,
+    { id: "error", title: "Save failed", parent: "editing", action: "Request rejected", row: 1, render: () => <Text>Try again</Text> }],
+};
+scenario.nodes = [start, { ...editing, parent: "start", render: () => <Flex column><Text>Delivery frequency</Text><Preferences /></Flex> },
+  { id: "review", title: "Review preferences", parent: "editing", action: "Review changes", row: 0, render: () => <Text>Check your delivery schedule</Text> },
+  { ...saved, parent: "review", action: "Confirm changes" }];
+export const comparison = { before, modified: ["editing"] };
+`;
+  await fs.writeFile(
+    entry,
+    originalEntry
+      .replace("import { scenario }", "import { scenario, comparison }")
+      .replace("scenario={scenario}", "scenario={scenario} comparison={comparison}"),
+  );
+  await fs.writeFile(scenario, compared);
+  try {
+    await page.reload();
+    const before = page.getByRole("region", { name: "Before", exact: true });
+    const after = page.getByRole("region", { name: "After", exact: true });
+    const map = page.getByRole("navigation", { name: "Flow states" });
+    const previewPane = page.getByRole("complementary");
+    await expect(previewPane).toHaveAccessibleDescription("Modified");
+    await expect(map.locator("[data-flow-title]")).toHaveText([
+      "Settings",
+      "Editing preferences ~",
+      "Review preferences +",
+      "Preferences saved",
+      "Save failed -",
+    ]);
+    await expect(
+      page.getByRole("navigation", { name: "Flow outline" }).getByRole("button"),
+    ).toHaveText([
+      "Settings",
+      "~ Editing preferences",
+      "+ Review preferences",
+      "Preferences saved",
+      "- Save failed",
+    ]);
+    await expect(
+      map.getByRole("button", {
+        name: "Preview Editing preferences",
+        exact: true,
+      }),
+    ).toHaveAccessibleDescription("Modified");
+    await expect(before.getByText("Delivery frequency")).toHaveCount(0);
+    await expect(after.getByText("Delivery frequency")).toBeVisible();
+    await after.getByRole("textbox").fill("After draft");
+    await expect(before.getByRole("textbox")).toHaveValue("Morning digest");
+    await before.getByRole("textbox").fill("Before draft");
+    const beforeInput = await before.getByRole("textbox").elementHandle();
+    const afterInput = await after.getByRole("textbox").elementHandle();
+    await expect(
+      before.getByRole("button", { name: "Follow flow: Save preferences" }),
+    ).toBeVisible();
+    await expect(after.getByRole("button", { name: "Follow flow: Save preferences" })).toHaveCount(
+      0,
+    );
+    // A tall, real panel must not overlap its navigation or the other revision when stacked.
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const side of [before, after]) {
+      const productButton = await side
+        .getByRole("button", { name: "Save preferences", exact: true })
+        .boundingBox();
+      const previous = await side.getByRole("button", { name: "Previous state" }).boundingBox();
+      expect(previous!.y).toBeGreaterThan(productButton!.y + productButton!.height);
+    }
+    const beforeBox = (await before.boundingBox())!;
+    const afterBox = (await after.boundingBox())!;
+    expect(afterBox.y).toBeGreaterThan(beforeBox.y + beforeBox.height);
+    await page.setViewportSize({ width: 1460, height: 1000 });
+    await after.getByRole("button", { name: "Follow flow: Review changes" }).click();
+    await expect(previewPane).toHaveAccessibleDescription("Added");
+    await expect(before.getByText("Not present in Before.")).toBeVisible();
+    await expect(before.getByRole("button")).toHaveCount(0);
+    await expect(after.getByText("Check your delivery schedule")).toBeVisible();
+    expect(await beforeInput!.evaluate((input) => input.isConnected)).toBe(true);
+    expect(await afterInput!.evaluate((input) => input.isConnected)).toBe(true);
+    await after.getByRole("button", { name: "Follow flow: Confirm changes" }).click();
+    await expect(previewPane).toHaveAccessibleDescription("Unchanged");
+    await expect(before).toHaveCount(0);
+    await expect(after).toHaveCount(0);
+    const shared = page.getByRole("region", {
+      name: "Shared state",
+      exact: true,
+    });
+    await expect(shared.getByRole("status")).toHaveText("Preferences saved");
+    await expect(shared.getByRole("navigation").getByRole("button")).toHaveText([
+      "Settings",
+      "Editing preferences",
+      "Review preferences",
+      "Preferences saved",
+    ]);
+    await shared.getByRole("textbox").fill("Shared draft");
+    const sharedInput = await shared.getByRole("textbox").elementHandle();
+    await map.getByRole("button", { name: "Preview Editing preferences", exact: true }).click();
+    await expect(before.getByRole("textbox")).toHaveValue("Before draft");
+    await expect(after.getByRole("textbox")).toHaveValue("After draft");
+    expect(
+      await before
+        .getByRole("textbox")
+        .evaluate((input, original) => input === original, beforeInput),
+    ).toBe(true);
+    expect(
+      await after
+        .getByRole("textbox")
+        .evaluate((input, original) => input === original, afterInput),
+    ).toBe(true);
+    expect(await sharedInput!.evaluate((input) => input.isConnected)).toBe(true);
+    await map.getByRole("button", { name: "Preview Preferences saved", exact: true }).click();
+    await expect(shared.getByRole("textbox")).toHaveValue("Shared draft");
+    await expect(map.locator('[data-flow-edge="editing:saved"]')).toHaveAttribute(
+      "data-change",
+      "removed",
+    );
+    await expect(map.locator('[data-flow-edge="review:saved"]')).toHaveAttribute(
+      "data-change",
+      "added",
+    );
+    await expect(map.locator('[data-flow-edge="start:editing"]')).toHaveAttribute(
+      "data-change",
+      "unchanged",
+    );
+    await map.getByRole("button", { name: "Preview Save failed", exact: true }).click();
+    await expect(previewPane).toHaveAccessibleDescription("Removed");
+    await expect(after.getByText("Not present in After.")).toBeVisible();
+    await expect(before.getByText("Try again")).toBeVisible();
+
+    const review = (title: string) =>
+      page
+        .getByRole("group", { name: `Review in tree: ${title}`, exact: true })
+        .getByRole("checkbox");
+    await review("Editing preferences").locator("xpath=ancestor::label").click();
+    await review("Preferences saved").locator("xpath=ancestor::label").click();
+    await page.reload();
+    await expect(review("Editing preferences")).toBeChecked();
+    await expect(review("Preferences saved")).toBeChecked();
+    // Changing only Before must invalidate the pair, but not an unrelated review.
+    await fs.writeFile(
+      scenario,
+      compared.replace(
+        'nodes: [start, { ...editing, parent: "start" }',
+        'nodes: [start, { ...editing, parent: "start", render: () => <Text>Old UI changed</Text> }',
+      ),
+    );
+    await page.reload();
+    await expect(review("Editing preferences")).not.toBeChecked();
+    await expect(review("Preferences saved")).toBeChecked();
+
+    await fs.writeFile(
+      scenario,
+      compared.replace("import { useState }", "import { useEffect, useState }") +
+        `
+const mounts = { before: 0, after: 0 };
+function Persistent({ selected, revision, version }: { selected: string; revision: number; version: "before" | "after" }) {
+  const [mount] = useState(() => ++mounts[version]);
+  const [draft, setDraft] = useState("");
+  useEffect(() => setDraft(""), [selected, revision]);
+  return <Flex column><Text role="status">{version + " mount " + mount + " · " + selected + " · " + revision}</Text><TextField aria-label="Persistent draft" value={draft} onChange={setDraft} /></Flex>;
+}
+before.persistentPreview = (context) => {
+  if (!before.nodes.some((node) => node.id === context.selected)) throw new Error("Missing Before state");
+  return <Persistent {...context} version="before" />;
+};
+scenario.persistentPreview = (context) => {
+  if (!scenario.nodes.some((node) => node.id === context.selected)) throw new Error("Missing After state");
+  return <Persistent {...context} version="after" />;
+};
+`,
+    );
+    await page.reload();
+    const beforeDraft = before.getByRole("textbox");
+    const afterDraft = after.getByRole("textbox");
+    await beforeDraft.fill("Before draft");
+    await afterDraft.fill("After draft");
+    await map.getByRole("button", { name: "Preview Preferences saved", exact: true }).click();
+    await expect(shared.getByRole("textbox")).toHaveValue("");
+    await expect(shared.getByRole("status")).toHaveText("Preferences saved");
+    await expect(
+      page.locator('section[aria-label="Before"]').getByRole("status", { includeHidden: true }),
+    ).toHaveText(/^before mount 1 · editing · \d+$/);
+    await expect(
+      page.locator('section[aria-label="After"]').getByRole("status", { includeHidden: true }),
+    ).toHaveText(/^after mount 1 · editing · \d+$/);
+    await expect(before).toHaveCount(0);
+    await expect(after).toHaveCount(0);
+    await map.getByRole("button", { name: "Preview Editing preferences", exact: true }).click();
+    await expect(beforeDraft).toHaveValue("Before draft");
+    await expect(afterDraft).toHaveValue("After draft");
+    // Explicitly reselecting a visible state still replays both live adapters.
+    await map.getByRole("button", { name: "Preview Editing preferences", exact: true }).click();
+    await expect(beforeDraft).toHaveValue("");
+    await expect(afterDraft).toHaveValue("");
+    await beforeDraft.fill("Before draft");
+    await afterDraft.fill("After draft");
+    await after.getByRole("button", { name: "Follow flow: Review changes" }).click();
+    await expect(before.getByText("Not present in Before.")).toBeVisible();
+    await expect(beforeDraft).not.toBeVisible();
+    await map.getByRole("button", { name: "Preview Editing preferences", exact: true }).click();
+    await expect(beforeDraft).toHaveValue("Before draft");
+    await expect(afterDraft).toHaveValue("");
+    await afterDraft.fill("After draft after review");
+    await map.getByRole("button", { name: "Preview Save failed", exact: true }).click();
+    await expect(beforeDraft).toHaveValue("");
+    await expect(afterDraft).not.toBeVisible();
+    await before.getByRole("button", { name: "Previous state" }).click();
+    await expect(beforeDraft).toHaveValue("");
+    await expect(afterDraft).toHaveValue("After draft after review");
+    await expect(before.getByRole("status")).toHaveText(/^before mount 1 · editing · \d+$/);
+    await expect(after.getByRole("status")).toHaveText(/^after mount 1 · editing · \d+$/);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Toggle flow sidebar" }).click();
+    await beforeDraft.scrollIntoViewIfNeeded();
+    await expect(beforeDraft).toBeInViewport();
+    await afterDraft.scrollIntoViewIfNeeded();
+    await expect(afterDraft).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  } finally {
+    await fs.writeFile(entry, originalEntry);
+    await fs.writeFile(scenario, originalScenario);
+  }
+});
+
 test("generic canvas renders light, dark and narrow without duplicate IDs", async ({
   page,
 }, testInfo) => {
