@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -88,6 +89,31 @@ export type FlowScenario = {
   }) => ReactNode;
 };
 
+/**
+ * The main scenario is After. IDs identify equivalent states across revisions.
+ * Visited preview pages stay mounted in independent Before, After, and unchanged lanes.
+ */
+export type FlowComparison = {
+  before: FlowScenario;
+  /** Shared states whose UI or behavior changed; structural differences are derived. */
+  modified?: readonly string[];
+  beforeLabel?: string;
+  afterLabel?: string;
+};
+
+const changes = {
+  unchanged: "Unchanged",
+  modified: "Modified",
+  added: "Added",
+  removed: "Removed",
+};
+const changeSuffixes = {
+  unchanged: "",
+  modified: " ~",
+  added: " +",
+  removed: " -",
+};
+
 class ReviewError extends errore.createTaggedError({
   name: "ReviewError",
   message: "Could not $operation preview reviews.",
@@ -126,20 +152,86 @@ function useSidebarWidth({
   return [width, setWidth] as const;
 }
 
-export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
-  const { nodes: steps } = scenario;
+export function FlowCanvas({
+  scenario,
+  comparison,
+}: {
+  scenario: FlowScenario;
+  comparison?: FlowComparison;
+}) {
+  const beforeScenario = comparison?.before;
+  const modified = comparison?.modified;
+  const beforeNodes = useMemo(
+    () => new Map(beforeScenario?.nodes.map((node) => [node.id, node])),
+    [beforeScenario?.nodes],
+  );
+  const afterNodes = useMemo(
+    () => new Map(scenario.nodes.map((node) => [node.id, node])),
+    [scenario.nodes],
+  );
+  const steps = useMemo(
+    () =>
+      beforeScenario
+        ? [
+            ...scenario.nodes,
+            ...beforeScenario.nodes.filter((node) => !afterNodes.has(node.id)),
+          ]
+        : scenario.nodes,
+    [scenario.nodes, beforeScenario, afterNodes],
+  );
+  const nodeChanges = useMemo(
+    () =>
+      new Map(
+        steps.map((node): [string, keyof typeof changes] => [
+          node.id,
+          !beforeNodes.has(node.id)
+            ? "added"
+            : !afterNodes.has(node.id)
+              ? "removed"
+              : modified?.includes(node.id)
+                ? "modified"
+                : "unchanged",
+        ]),
+      ),
+    [steps, beforeNodes, afterNodes, modified],
+  );
+  // Layout uses After's ancestry, with removed branches attached to their old parents.
+  // Connections retain each revision's actual ancestry, including rerouted shared states.
+  const edges = useMemo(() => {
+    const before = beforeScenario?.nodes.filter((node) => node.parent) ?? [];
+    const after = scenario.nodes.filter((node) => node.parent);
+    const same = (a: FlowNode, b: FlowNode) =>
+      a.id === b.id && a.parent === b.parent && a.action === b.action;
+    return [
+      ...after.map((node) => ({
+        node,
+        change:
+          beforeScenario && !before.some((old) => same(old, node))
+            ? "added"
+            : "unchanged",
+      })),
+      ...before
+        .filter((node) => !after.some((next) => same(node, next)))
+        .map((node) => ({ node, change: "removed" })),
+    ];
+  }, [scenario.nodes, beforeScenario]);
+  const layoutKey = comparison
+    ? `${scenario.id}:comparison:${comparison.before.id}`
+    : scenario.id;
   const nodeWidth = scenario.dimensions?.nodeWidth ?? 160;
   const nodeHeight = scenario.dimensions?.nodeHeight ?? 212;
   const previewWidth = scenario.dimensions?.previewWidth ?? 440;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [treeWidth, setTreeWidth] = useSidebarWidth({
-    storageKey: `flow-width:${scenario.id}:outline`,
+    storageKey: `flow-width:${layoutKey}:outline`,
     initialWidth: 248,
   });
   const [panelWidth, setPanelWidth] = useSidebarWidth({
-    storageKey: `flow-width:${scenario.id}:preview`,
+    storageKey: `flow-width:${layoutKey}:preview`,
     // Include the aside's 20px inset and the panel's 16px inset plus border on both sides.
-    initialWidth: previewWidth + 40 + 34,
+    initialWidth: comparison
+      ? Math.min(previewWidth * 2 + 90, window.innerWidth * 0.52)
+      : previewWidth + 40 + 34,
   });
   const layoutRef = useRef<HTMLDivElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(window.innerWidth);
@@ -157,7 +249,10 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const shownTreeWidth = Math.min(treeMaximum, Math.max(180, treeWidth));
   const panelMaximum = Math.max(
     320,
-    Math.min(960, layoutWidth - (sidebarOpen ? shownTreeWidth : 0) - 240),
+    Math.min(
+      comparison ? 1280 : 960,
+      layoutWidth - (sidebarOpen ? shownTreeWidth : 0) - 240,
+    ),
   );
   const shownPanelWidth = Math.min(panelMaximum, Math.max(320, panelWidth));
   const contentStyle: CSSProperties & {
@@ -171,9 +266,9 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const columnGap = scenario.dimensions?.columnGap ?? 56;
   const rowGap = scenario.dimensions?.rowGap ?? 64;
   const label = scenario.navigationLabel ?? "Flow";
-  const storageKey =
-    scenario.reviewStorageKey ?? `flow-reviewed-v1:${scenario.id}`;
+  const storageKey = `${scenario.reviewStorageKey ?? `flow-reviewed-v1:${scenario.id}`}${comparison ? `:comparison:${comparison.before.id}` : ""}`;
   const outlineId = `${scenario.id}-flow-outline`;
+  const changeDescriptionId = useId();
   const [thumbnailHeights, setThumbnailHeights] = useState<
     Record<string, number>
   >({});
@@ -232,7 +327,9 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const graphWidth =
     Math.max(...[...nodes.values()].map((node) => node.x)) + nodeWidth + 24;
   const graphHeight =
-    Math.max(...[...nodes.values()].map((node) => node.y + node.height)) + 24;
+    Math.max(...[...nodes.values()].map((node) => node.y + node.height)) +
+    24 +
+    (comparison ? edges.length * 16 + 20 : 0);
   const [selected, setSelected] = useState(scenario.initialState);
   const [journeyEnd, setJourneyEnd] = useState(scenario.initialState);
   const breadcrumbs: string[] = [];
@@ -242,7 +339,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
     ancestor = nodes.get(ancestor)!.parent;
   }
   const [revision, setRevision] = useState(0);
-  const [zoom, setZoom] = useState(0.85);
+  const [zoom, setZoom] = useState(comparison ? 0.65 : 0.85);
   const reduceMotion = useReducedMotion();
   const centered = useRef(false);
   const thumbnailRefs = useRef(new Map<string, HTMLDivElement>());
@@ -341,8 +438,9 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                 element.removeAttribute("style");
             }
           }
+          const before = beforeNodes.get(step.id);
           const bytes = new TextEncoder().encode(
-            `${step.action}:${clone.innerHTML}`,
+            `${step.action}:${clone.innerHTML}${beforeScenario ? JSON.stringify([before?.parent, before?.action, afterNodes.get(step.id)?.parent, nodeChanges.get(step.id)]) : ""}`,
           );
           const digest = await crypto.subtle
             .digest("SHA-256", bytes)
@@ -395,7 +493,7 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [steps, storageKey]);
+  }, [steps, storageKey, beforeScenario, beforeNodes, afterNodes, nodeChanges]);
   const { resolvedTheme, setPreference } = useTheme();
   const scroller = useRef<HTMLDivElement>(null);
   const previewScroller = useRef<HTMLElement>(null);
@@ -424,10 +522,13 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   const edge = useStyles(styles.edge);
   const preview = useStyles(styles.preview);
   const previewPanel = useStyles(styles.previewPanel);
+  const comparisonColumns = useStyles(styles.comparisonColumns);
+  const edgeStyle = useStyles(styles.comparisonEdge);
   const persistentPreviewLayout = useStyles(styles.persistentPreviewLayout);
   const navigationButton = useStyles(styles.navigationButton);
   const title = useStyles(text({ size: "lg", fontWeight: 600 }));
   const current = nodes.get(selected)!;
+  const sharedPreview = comparison && nodeChanges.get(selected) === "unchanged";
   const previewInset = `max(${spacing.value(8)}, calc((100cqw - ${current.maxWidth ?? previewWidth}px - 2px) / 2))`;
   const next = steps.filter((step) => step.parent === selected);
   const path = new Set(breadcrumbs.slice(0, breadcrumbs.indexOf(selected) + 1));
@@ -461,14 +562,33 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
         .map((step) => {
           return (
             <li key={step.id}>
-              <div className={treeRow} data-selected={selected === step.id}>
+              <div
+                className={treeRow}
+                data-selected={selected === step.id}
+                data-change={comparison ? nodeChanges.get(step.id) : undefined}
+                title={
+                  comparison ? changes[nodeChanges.get(step.id)!] : undefined
+                }
+              >
                 <Button
                   className={treeButton}
                   variant="quiet"
                   aria-current={selected === step.id ? "step" : undefined}
+                  aria-describedby={
+                    comparison
+                      ? `${changeDescriptionId}-${nodeChanges.get(step.id)}`
+                      : undefined
+                  }
                   onPress={() => select(step.id)}
                 >
-                  {step.title}
+                  <span data-flow-title>
+                    {comparison && nodeChanges.get(step.id) !== "unchanged" && (
+                      <span aria-hidden="true">
+                        {changeSuffixes[nodeChanges.get(step.id)!].trim()}{" "}
+                      </span>
+                    )}
+                    {step.title}
+                  </span>
                 </Button>
                 <div
                   className={reviewCheckbox}
@@ -502,32 +622,34 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           <Checkbox
             label="Reviewed"
             checked={reviewed.includes(selected)}
-            setChecked={(checked: boolean) =>
-              markReviewed(selected, checked)
-            }
+            setChecked={(checked: boolean) => markReviewed(selected, checked)}
           />
         </div>
       </Flex>
-      {current.note && (
+      {!comparison && current.note && (
         <Text size="sm" color="lowContrast">
           {current.note}
         </Text>
       )}
     </Flex>
   );
-  const previewPanelFor = (ui: ReactNode, key: string) => (
+  const previewPanelFor = (
+    ui: ReactNode,
+    key: string,
+    node: FlowNode = current,
+  ) => (
     <div
       key={key}
       className={previewPanel}
       style={{
-        padding: previewInset,
-        maxHeight: `calc(${current.maxHeight ?? (nodeHeight * (current.maxWidth ?? previewWidth)) / nodeWidth}px + ${previewInset} * 2 + 2px)`,
+        padding: comparison ? spacing.value(8) : previewInset,
+        maxHeight: `calc(${node.maxHeight ?? (nodeHeight * (node.maxWidth ?? previewWidth)) / nodeWidth}px + ${comparison ? spacing.value(8) : previewInset} * 2 + 2px)`,
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: current.maxWidth ?? previewWidth,
+          maxWidth: node.maxWidth ?? previewWidth,
           flexShrink: 0,
         }}
       >
@@ -568,6 +690,12 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
   );
   return (
     <main className={page}>
+      {comparison &&
+        Object.entries(changes).map(([change, description]) => (
+          <span key={change} id={`${changeDescriptionId}-${change}`} hidden>
+            {description}
+          </span>
+        ))}
       <header className={header}>
         <Flex column gap={3}>
           <h1 className={title}>{scenario.title}</h1>
@@ -697,30 +825,42 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                     pointerEvents: "none",
                   }}
                 >
-                  {steps
-                    .filter((step) => step.parent)
-                    .map((step) => {
-                      const from = nodes.get(step.parent!)!;
-                      const to = nodes.get(step.id)!;
-                      const startX = from.x + nodeWidth;
-                      const startY = from.y + from.height / 2;
-                      const endY = to.y + to.height / 2;
-                      const elbow = startX + columnGap / 2;
-                      return (
-                        <path
-                          key={step.id}
-                          className={edge}
-                          d={`M ${startX} ${startY} H ${elbow} V ${endY} H ${to.x - 8} l -5 -4 m 5 4 l -5 4`}
-                          fill="none"
-                          stroke={
-                            path.has(step.id)
-                              ? colors.accent[8]
-                              : colors.gray[8]
-                          }
-                          strokeWidth={path.has(step.id) ? 2 : 1.5}
-                        />
-                      );
-                    })}
+                  {edges.map(({ node: step, change }, index) => {
+                    const from = nodes.get(step.parent!)!;
+                    const to = nodes.get(step.id)!;
+                    const startX = from.x + nodeWidth;
+                    const offset =
+                      comparison && change !== "unchanged"
+                        ? change === "added"
+                          ? -4
+                          : 4
+                        : 0;
+                    const startY = from.y + from.height / 2 + offset;
+                    const endY = to.y + to.height / 2 + offset;
+                    const elbow = startX + columnGap / 2;
+                    const rail = graphHeight - 20 - index * 16;
+                    const route =
+                      comparison && to.x !== from.x + nodeWidth + columnGap
+                        ? `M ${startX} ${startY} H ${startX + columnGap / 3} V ${rail} H ${to.x - columnGap / 3} V ${endY} H ${to.x - 8}`
+                        : `M ${startX} ${startY} H ${elbow} V ${endY} H ${to.x - 8}`;
+                    return (
+                      <path
+                        key={`${step.parent}:${step.id}:${change}`}
+                        className={comparison ? edgeStyle : edge}
+                        data-flow-edge={`${step.parent}:${step.id}`}
+                        data-change={comparison ? change : undefined}
+                        data-action={step.action}
+                        d={`${route} l -5 -4 m 5 4 l -5 4`}
+                        fill="none"
+                        stroke={
+                          !comparison && path.has(step.id)
+                            ? colors.accent[8]
+                            : colors.gray[8]
+                        }
+                        strokeWidth={!comparison && path.has(step.id) ? 2 : 1.5}
+                      />
+                    );
+                  })}
                 </svg>
                 {steps.map((step) => {
                   const node = nodes.get(step.id)!;
@@ -729,6 +869,14 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                       key={step.id}
                       className={nodeStyle}
                       data-selected={selected === step.id}
+                      data-change={
+                        comparison ? nodeChanges.get(step.id) : undefined
+                      }
+                      title={
+                        comparison
+                          ? changes[nodeChanges.get(step.id)!]
+                          : undefined
+                      }
                       style={{
                         left: node.x - thumbnailPadding,
                         top:
@@ -759,6 +907,11 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                           style={{ flex: 1 }}
                         >
                           {step.title}
+                          {comparison && (
+                            <span aria-hidden="true">
+                              {changeSuffixes[nodeChanges.get(step.id)!]}
+                            </span>
+                          )}
                         </Text>
                         <div
                           className={reviewCheckbox}
@@ -794,6 +947,15 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                             }}
                           >
                             {step.render({ mode: "thumbnail" })}
+                            {comparison &&
+                              beforeNodes.has(step.id) &&
+                              afterNodes.has(step.id) && (
+                                <div hidden>
+                                  {beforeNodes
+                                    .get(step.id)!
+                                    .render({ mode: "thumbnail" })}
+                                </div>
+                              )}
                           </div>
                         </div>
                         {reviewed.includes(step.id) && (
@@ -810,6 +972,11 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
                         className={hit}
                         data-flow-state={step.id}
                         aria-label={`Preview ${step.title}`}
+                        aria-describedby={
+                          comparison
+                            ? `${changeDescriptionId}-${nodeChanges.get(step.id)}`
+                            : undefined
+                        }
                         aria-pressed={selected === step.id}
                         onPress={() => select(step.id)}
                       >
@@ -826,54 +993,102 @@ export function FlowCanvas({ scenario }: { scenario: FlowScenario }) {
           className={preview}
           ref={previewScroller}
           aria-label="Selected state preview"
+          aria-description={
+            comparison ? changes[nodeChanges.get(selected)!] : undefined
+          }
         >
-          <nav aria-label="State path">
-            <ol
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                listStyle: "none",
-                margin: 0,
-                padding: 0,
-              }}
-            >
-              {breadcrumbs.map((id, index) => (
-                <li
-                  key={id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    minWidth: 0,
-                    maxWidth: "100%",
-                  }}
-                >
-                  {index > 0 && (
-                    <ChevronRight
-                      size="xs"
-                      aria-hidden="true"
-                      style={{ flexShrink: 0 }}
-                    />
-                  )}
-                  <Button
-                    variant="quiet"
-                    variantColor={id === selected ? "accent" : undefined}
-                    aria-current={id === selected ? "step" : undefined}
+          {comparison ? (
+            previewHeader
+          ) : (
+            <nav aria-label="State path">
+              <ol
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                }}
+              >
+                {breadcrumbs.map((id, index) => (
+                  <li
+                    key={id}
                     style={{
-                      whiteSpace: "normal",
-                      height: "auto",
-                      minHeight: 24,
-                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      minWidth: 0,
+                      maxWidth: "100%",
                     }}
-                    onPress={() => select(id)}
                   >
-                    {nodes.get(id)!.title}
-                  </Button>
-                </li>
-              ))}
-            </ol>
-          </nav>
-          {scenario.persistentPreview ? (
+                    {index > 0 && (
+                      <ChevronRight
+                        size="xs"
+                        aria-hidden="true"
+                        style={{ flexShrink: 0 }}
+                      />
+                    )}
+                    <Button
+                      variant="quiet"
+                      variantColor={id === selected ? "accent" : undefined}
+                      aria-current={id === selected ? "step" : undefined}
+                      style={{
+                        whiteSpace: "normal",
+                        height: "auto",
+                        minHeight: 24,
+                        textAlign: "left",
+                      }}
+                      onPress={() => select(id)}
+                    >
+                      {nodes.get(id)!.title}
+                    </Button>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
+          {comparison ? (
+            <div
+              className={comparisonColumns}
+              style={
+                sharedPreview
+                  ? { gridTemplateColumns: "minmax(0, 1fr)" }
+                  : undefined
+              }
+            >
+              <ComparisonPreview
+                scenario={comparison.before}
+                label={comparison.beforeLabel ?? "Before"}
+                labelColor={colors.red[11]}
+                hidden={sharedPreview}
+                selected={selected}
+                revision={revision}
+                select={select}
+                renderPanel={previewPanelFor}
+              />
+              <ComparisonPreview
+                scenario={scenario}
+                label={comparison.afterLabel ?? "After"}
+                labelColor={colors.green[11]}
+                hidden={sharedPreview}
+                selected={selected}
+                revision={revision}
+                select={select}
+                renderPanel={previewPanelFor}
+              />
+              <ComparisonPreview
+                scenario={scenario}
+                label="Shared state"
+                labelColor={colors.gray[11]}
+                shared
+                hidden={!sharedPreview}
+                selected={selected}
+                revision={revision}
+                select={select}
+                renderPanel={previewPanelFor}
+              />
+            </div>
+          ) : scenario.persistentPreview ? (
             <div className={persistentPreviewLayout}>
               <Crossfade
                 contentKey={selected}
@@ -927,6 +1142,156 @@ function PreviewScene({ children }: { children: ReactNode }) {
     <div className={scene} inert={!present} aria-hidden={!present}>
       {children}
     </div>
+  );
+}
+
+/** Each lane retains visited pages; hidden lanes do not advance their live instance. */
+function ComparisonPreview({
+  scenario,
+  label,
+  labelColor,
+  hidden,
+  shared,
+  selected,
+  revision,
+  select,
+  renderPanel,
+}: {
+  scenario: FlowScenario;
+  label: string;
+  labelColor: string;
+  hidden?: boolean;
+  shared?: boolean;
+  selected: string;
+  revision: number;
+  select: (id: string) => void;
+  renderPanel: (ui: ReactNode, key: string, node: FlowNode) => ReactNode;
+}) {
+  const side = useStyles(styles.comparisonSide);
+  const navigationButton = useStyles(styles.navigationButton);
+  const current = scenario.nodes.find((node) => node.id === selected);
+  const active = !hidden && !!current;
+  const [visited, setVisited] = useState<string[]>([]);
+  if (active && !visited.includes(selected)) {
+    setVisited([...visited, selected]);
+  }
+  const [lastPresent, setLastPresent] = useState({
+    selected: scenario.initialState,
+    revision: 0,
+  });
+  if (
+    active &&
+    (lastPresent.selected !== selected || lastPresent.revision !== revision)
+  ) {
+    setLastPresent({ selected, revision });
+  }
+  const context = active ? { selected, revision } : lastPresent;
+  const retained = scenario.nodes.find((node) => node.id === context.selected)!;
+  const ancestors: FlowNode[] = [];
+  let ancestor = current;
+  while (ancestor) {
+    ancestors.unshift(ancestor);
+    ancestor = scenario.nodes.find((node) => node.id === ancestor!.parent);
+  }
+  return (
+    <section
+      className={side}
+      aria-label={shared ? "Shared state" : label}
+      hidden={hidden}
+      style={hidden ? { display: "none" } : undefined}
+    >
+      <Flex column gap={3}>
+        {!shared && (
+          <Text size="sm" fontWeight={600} style={{ color: labelColor }}>
+            {label}
+          </Text>
+        )}
+        {current && (
+          <nav aria-label={`${shared ? "Shared" : label} state path`}>
+            <Flex row gap={1} style={{ flexWrap: "wrap" }}>
+              {ancestors.map((node, index) => (
+                <Flex row alignItems="center" key={node.id}>
+                  {index > 0 && <ChevronRight size="xs" aria-hidden="true" />}
+                  <Button
+                    variant="quiet"
+                    aria-current={node.id === selected ? "step" : undefined}
+                    variantColor={node.id === selected ? "accent" : undefined}
+                    onPress={() => select(node.id)}
+                    style={{
+                      whiteSpace: "normal",
+                      height: "auto",
+                      minHeight: 24,
+                      textAlign: "left",
+                    }}
+                  >
+                    {node.title}
+                  </Button>
+                </Flex>
+              ))}
+            </Flex>
+          </nav>
+        )}
+        {current?.note && (
+          <Text size="sm" color="lowContrast">
+            {current.note}
+          </Text>
+        )}
+      </Flex>
+      {scenario.persistentPreview && !shared ? (
+        <div hidden={!current} inert={!current} aria-hidden={!current}>
+          {renderPanel(
+            scenario.persistentPreview(context),
+            "persistent",
+            retained,
+          )}
+        </div>
+      ) : (
+        visited.map((id) => {
+          const node = scenario.nodes.find((candidate) => candidate.id === id);
+          if (!node) return null;
+          const inactive = !active || selected !== id;
+          return (
+            <div key={id} hidden={inactive} inert={inactive}>
+              {renderPanel(node.render({ mode: "preview" }), id, node)}
+            </div>
+          );
+        })
+      )}
+      {!current && <Text color="lowContrast">Not present in {label}.</Text>}
+      {current && (
+        <Flex row gap={4} alignItems="start" style={{ flexWrap: "wrap" }}>
+          {current.parent && (
+            <Button
+              className={navigationButton}
+              onPress={() => select(current.parent!)}
+            >
+              <ArrowLeft />
+              Previous state
+            </Button>
+          )}
+          <Flex
+            row
+            gap={4}
+            justifyContent="end"
+            style={{ flex: 1, flexWrap: "wrap", minWidth: 0 }}
+          >
+            {scenario.nodes
+              .filter((node) => node.parent === selected)
+              .map((node) => (
+                <Button
+                  key={node.id}
+                  className={navigationButton}
+                  aria-label={`Follow flow: ${node.action}`}
+                  onPress={() => select(node.id)}
+                >
+                  {node.action}
+                  <ArrowRight />
+                </Button>
+              ))}
+          </Flex>
+        </Flex>
+      )}
+    </section>
   );
 }
 
@@ -1002,6 +1367,16 @@ const dottedBackground = style({
   backgroundImage: `radial-gradient(${colors.grayAlpha[3]} 1px, transparent 1px)`,
   backgroundSize: "12px 12px",
 });
+
+function changeStyles(
+  change: "added" | "removed" | "modified",
+  scale: typeof colors.red,
+) {
+  const marked = `&[data-change='${change}']`;
+  return {
+    [`${marked} [data-flow-title]`]: { color: scale[11] },
+  };
+}
 
 const styles = {
   page: style({
@@ -1097,6 +1472,9 @@ const styles = {
     "&[data-selected='true']": {
       backgroundColor: backgroundColor.elementHover,
     },
+    ...changeStyles("added", colors.green),
+    ...changeStyles("removed", colors.red),
+    ...changeStyles("modified", colors.amber),
   }),
   treeButton: style({
     "&&": {
@@ -1135,6 +1513,32 @@ const styles = {
   edge: style(motion.standard("stroke", "stroke-width"), {
     "@media (prefers-reduced-motion: reduce)": { transition: "none" },
   }),
+  comparisonEdge: style({
+    "&[data-change='added']": {
+      stroke: colors.green[9],
+    },
+    "&[data-change='removed']": {
+      stroke: colors.red[9],
+      strokeDasharray: "5 3",
+    },
+  }),
+  comparisonColumns: style({
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+    gridAutoRows: "max-content",
+    alignContent: "start",
+    gap: 16,
+    minWidth: 0,
+  }),
+  comparisonSide: style({
+    display: "grid",
+    gridRow: "span 3",
+    gridTemplateRows: "subgrid",
+    alignItems: "start",
+    alignContent: "start",
+    gap: 12,
+    minWidth: 0,
+  }),
   node: style(radius.lg, shadow.subtle, {
     position: "absolute",
     display: "flex",
@@ -1151,6 +1555,9 @@ const styles = {
       color: colors.accent[12],
       fontWeight: 600,
     },
+    ...changeStyles("added", colors.green),
+    ...changeStyles("removed", colors.red),
+    ...changeStyles("modified", colors.amber),
   }),
   nodeBody: style({ position: "relative", flexShrink: 0 }),
   thumbnail: style(motion.standard("opacity"), {
@@ -1268,7 +1675,18 @@ const styles = {
     touchAction: "none",
     "&[data-side='left']": { left: "calc(var(--flow-tree-width) - 4px)" },
     "&[data-side='right']": { right: "calc(var(--flow-preview-width) - 4px)" },
-    "&:hover, &:focus-visible": { backgroundColor: colors.accentAlpha[4] },
+    "&::before": {
+      content: '""',
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 3,
+      width: 1,
+      pointerEvents: "none",
+    },
+    "&:hover::before, &:focus-visible::before, &:active::before": {
+      backgroundColor: colors.green[9],
+    },
     // Maui's focus ring uses relative positioning; handles must stay outside the grid flow.
     "&:focus-visible": { position: "absolute", zIndex: 25 },
     "@media (max-width: 900px)": { display: "none" },
