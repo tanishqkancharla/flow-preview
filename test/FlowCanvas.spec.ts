@@ -641,12 +641,14 @@ export const comparison = { before, modified: ["editing"] };
 
     await fs.writeFile(
       scenario,
-      compared +
+      compared.replace('import { useState }', 'import { useEffect, useState }') +
         `
 const mounts = { before: 0, after: 0 };
 function Persistent({ selected, revision, version }: { selected: string; revision: number; version: "before" | "after" }) {
   const [mount] = useState(() => ++mounts[version]);
-  return <Flex column><Text role="status">{version + " mount " + mount + " · " + selected + " · " + revision}</Text><TextField aria-label="Persistent draft" defaultValue="" /></Flex>;
+  const [draft, setDraft] = useState("");
+  useEffect(() => setDraft(""), [selected, revision]);
+  return <Flex column><Text role="status">{version + " mount " + mount + " · " + selected + " · " + revision}</Text><TextField aria-label="Persistent draft" value={draft} onChange={setDraft} /></Flex>;
 }
 before.persistentPreview = (context) => {
   if (!before.nodes.some((node) => node.id === context.selected)) throw new Error("Missing Before state");
@@ -685,19 +687,33 @@ scenario.persistentPreview = (context) => {
       .click();
     await expect(beforeDraft).toHaveValue("Before draft");
     await expect(afterDraft).toHaveValue("After draft");
+    // Explicitly reselecting a visible state still replays both live adapters.
+    await map
+      .getByRole("button", { name: "Preview Editing preferences", exact: true })
+      .click();
+    await expect(beforeDraft).toHaveValue("");
+    await expect(afterDraft).toHaveValue("");
+    await beforeDraft.fill("Before draft");
+    await afterDraft.fill("After draft");
     await after
       .getByRole("button", { name: "Follow flow: Review changes" })
       .click();
     await expect(before.getByText("Not present in Before.")).toBeVisible();
     await expect(beforeDraft).not.toBeVisible();
     await map
-      .getByRole("button", { name: "Preview Save failed", exact: true })
+      .getByRole("button", { name: "Preview Editing preferences", exact: true })
       .click();
     await expect(beforeDraft).toHaveValue("Before draft");
+    await expect(afterDraft).toHaveValue("");
+    await afterDraft.fill("After draft after review");
+    await map
+      .getByRole("button", { name: "Preview Save failed", exact: true })
+      .click();
+    await expect(beforeDraft).toHaveValue("");
     await expect(afterDraft).not.toBeVisible();
     await before.getByRole("button", { name: "Previous state" }).click();
-    await expect(beforeDraft).toHaveValue("Before draft");
-    await expect(afterDraft).toHaveValue("After draft");
+    await expect(beforeDraft).toHaveValue("");
+    await expect(afterDraft).toHaveValue("After draft after review");
     await expect(before.getByRole("status")).toHaveText(
       /^before mount 1 · editing · \d+$/,
     );

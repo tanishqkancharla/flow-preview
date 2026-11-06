@@ -1178,14 +1178,30 @@ function ComparisonPreview({
   const [lastPresent, setLastPresent] = useState({
     selected: scenario.initialState,
     revision: 0,
+    observedRevision: revision,
+    active,
   });
   if (
-    active &&
-    (lastPresent.selected !== selected || lastPresent.revision !== revision)
+    active !== lastPresent.active ||
+    (active &&
+      (lastPresent.selected !== selected ||
+        lastPresent.observedRevision !== revision))
   ) {
-    setLastPresent({ selected, revision });
+    setLastPresent({
+      selected: active ? selected : lastPresent.selected,
+      // Resuming the same frozen state is not an explicit replay.
+      revision:
+        active && (lastPresent.active || lastPresent.selected !== selected)
+          ? revision
+          : lastPresent.revision,
+      observedRevision: revision,
+      active,
+    });
   }
-  const context = active ? { selected, revision } : lastPresent;
+  const context = {
+    selected: lastPresent.selected,
+    revision: lastPresent.revision,
+  };
   const retained = scenario.nodes.find((node) => node.id === context.selected)!;
   const ancestors: FlowNode[] = [];
   let ancestor = current;
