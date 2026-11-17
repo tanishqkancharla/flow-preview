@@ -2,6 +2,9 @@
 
 An agent skill for turning a user journey into an interactive canvas of real UI states. It includes linked thumbnails, animated navigation, zoom, an outline, and per-state review marks that persist in the browser.
 
+> [!NOTE]
+> Flow previews now live in [product-doc](https://github.com/tanishqkancharla/diffmap), which shows user flows and components live inside a spec, from your app's Storybook stories, and on each pull request's preview deployment. Install its `generate-product-doc` skill and run `npx product-doc guide previews` to set up an app. This skill still works, but new features land in product-doc.
+
 ## Install
 
 Install with the [Skills CLI](https://vercel.com/docs/agent-resources/skills):
